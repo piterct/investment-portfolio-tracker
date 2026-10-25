@@ -1,5 +1,4 @@
-﻿using InvestmentPortfolioTracker.Business.Interfaces;
-using InvestmentPortfolioTracker.Business.Notifications;
+﻿using InvestmentPortfolioTracker.Business.Notifications;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 
