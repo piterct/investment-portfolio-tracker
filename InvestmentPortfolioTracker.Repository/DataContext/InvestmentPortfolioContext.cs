@@ -13,7 +13,7 @@ namespace InvestmentPortfolioTracker.Repository.DataContext
 
         public InvestmentPortfolioContext(IOptions<Settings> config, IHostEnvironment environment)
         {
-            var configuredDirectory = config.Value.DataBase.Directory;
+            var configuredDirectory = config.Value.Directory;
 
                 DatabaseDirectory = string.IsNullOrWhiteSpace(configuredDirectory) ? environment.ContentRootPath :
                     Path.IsPathRooted(configuredDirectory) ? configuredDirectory :
