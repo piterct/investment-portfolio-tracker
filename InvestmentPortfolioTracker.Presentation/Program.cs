@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using InvestmentPortfolioTracker.Business.Models;
 using Microsoft.Data.Sqlite;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -268,7 +269,6 @@ static string? ValidateAsset(AssetInput input)
 public sealed record AssetInput(string Ticker, string? Name, int Quantity, decimal TargetPercent, int? Rating, string? Notes);
 public sealed record SettingsInput(decimal Patrimony, string? ApiToken, bool ClearApiToken = false);
 public sealed record AppSettings(decimal Patrimony, string? ApiToken);
-public sealed record AssetRecord(int Id, string Ticker, string Name, int Quantity, decimal TargetPercent, int? Rating, string Notes, decimal CurrentPrice, DateTimeOffset? PriceUpdatedAt, DateTimeOffset CreatedAt);
 
 public static class Database
 {
@@ -325,9 +325,9 @@ INSERT OR IGNORE INTO Settings (Id, Patrimony, ApiToken) VALUES (1, 0, NULL);";
         await command.ExecuteNonQueryAsync();
     }
 
-    public static async Task<List<AssetRecord>> GetAssetsAsync(string connectionString)
+    public static async Task<List<Asset>> GetAssetsAsync(string connectionString)
     {
-        var list = new List<AssetRecord>();
+        var list = new List<Asset>();
         await using var connection = await OpenAsync(connectionString);
         await using var command = connection.CreateCommand();
         command.CommandText = "SELECT Id, Ticker, Name, Quantity, TargetPercent, Rating, Notes, CurrentPrice, PriceUpdatedAt, CreatedAt FROM Assets ORDER BY Ticker;";
@@ -336,7 +336,7 @@ INSERT OR IGNORE INTO Settings (Id, Patrimony, ApiToken) VALUES (1, 0, NULL);";
         return list;
     }
 
-    public static async Task<AssetRecord?> GetAssetByIdAsync(string connectionString, int id)
+    public static async Task<Asset?> GetAssetByIdAsync(string connectionString, int id)
     {
         await using var connection = await OpenAsync(connectionString);
         await using var command = connection.CreateCommand();
@@ -346,7 +346,7 @@ INSERT OR IGNORE INTO Settings (Id, Patrimony, ApiToken) VALUES (1, 0, NULL);";
         return await reader.ReadAsync() ? ReadAsset(reader) : null;
     }
 
-    public static async Task<AssetRecord?> GetAssetByTickerAsync(string connectionString, string ticker)
+    public static async Task<Asset?> GetAssetByTickerAsync(string connectionString, string ticker)
     {
         await using var connection = await OpenAsync(connectionString);
         await using var command = connection.CreateCommand();
@@ -376,11 +376,11 @@ INSERT OR IGNORE INTO Settings (Id, Patrimony, ApiToken) VALUES (1, 0, NULL);";
         await command.ExecuteNonQueryAsync();
     }
 
-    private static AssetRecord ReadAsset(SqliteDataReader reader)
+    private static Asset ReadAsset(SqliteDataReader reader)
     {
         var updatedAt = reader.IsDBNull(8) ? (DateTimeOffset?)null : DateTimeOffset.Parse(reader.GetString(8), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
         var createdAt = DateTimeOffset.Parse(reader.GetString(9), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
-        return new AssetRecord(
+        return new Asset(
             reader.GetInt32(0),
             reader.GetString(1),
             reader.GetString(2),
