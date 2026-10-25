@@ -45,7 +45,6 @@ namespace InvestmentPortfolioTracker.Api.Configuration
                                 .WithMethods("GET")
                                 .WithOrigins("http://google.com.br")
                                 .SetIsOriginAllowedToAllowWildcardSubdomains()
-                                //.WithHeaders(HeaderNames.ContentType, "x-custom-header")
                                 .AllowAnyHeader());
                 }
 
