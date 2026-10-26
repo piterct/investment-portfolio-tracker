@@ -3,7 +3,7 @@ using Microsoft.AspNetCore.Mvc.ApiExplorer;
 
 namespace InvestmentPortfolioTracker.Api
 {
-    public class Startup
+    public class Startup: IStartupProject
     {
         public Startup(IConfiguration configuration)
         {
@@ -15,7 +15,7 @@ namespace InvestmentPortfolioTracker.Api
         {
             services.WebApiConfig();
             services.AddSwaggerConfig();
-            services.ResolveDependencies();
+            services.ResolveDependencies(Configuration);
         }
 
         public void Configure(WebApplication app, IWebHostEnvironment environment, IApiVersionDescriptionProvider provider)
