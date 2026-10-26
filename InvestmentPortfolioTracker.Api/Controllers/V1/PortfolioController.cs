@@ -1,4 +1,4 @@
-﻿using InvestmentPortfolioTracker.Business.Interfaces;
+﻿using InvestmentPortfolioTracker.Business.Notifications;
 using Microsoft.AspNetCore.Mvc;
 
 namespace InvestmentPortfolioTracker.Api.Controllers.V1
