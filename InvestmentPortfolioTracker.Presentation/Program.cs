@@ -268,7 +268,6 @@ static string? ValidateAsset(AssetInput input)
 
 public sealed record AssetInput(string Ticker, string? Name, int Quantity, decimal TargetPercent, int? Rating, string? Notes);
 public sealed record SettingsInput(decimal Patrimony, string? ApiToken, bool ClearApiToken = false);
-public sealed record AppSettings(decimal Patrimony, string? ApiToken);
 
 public static class Database
 {
@@ -311,8 +310,8 @@ INSERT OR IGNORE INTO Settings (Id, Patrimony, ApiToken) VALUES (1, 0, NULL);";
         await using var command = connection.CreateCommand();
         command.CommandText = "SELECT Patrimony, ApiToken FROM Settings WHERE Id = 1;";
         await using var reader = await command.ExecuteReaderAsync();
-        if (!await reader.ReadAsync()) return new AppSettings(0, null);
-        return new AppSettings(Convert.ToDecimal(reader.GetDouble(0), CultureInfo.InvariantCulture), reader.IsDBNull(1) ? null : reader.GetString(1));
+        if (!await reader.ReadAsync()) return new AppSettings(0, 0, null);
+        return new AppSettings(0,Convert.ToDecimal(reader.GetDouble(0), CultureInfo.InvariantCulture), reader.IsDBNull(1) ? null : reader.GetString(1));
     }
 
     public static async Task SaveSettingsAsync(string connectionString, decimal patrimony, string? apiToken)
