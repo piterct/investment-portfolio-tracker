@@ -6,10 +6,11 @@
     <RootNamespace>InvestmentPortfolioTracker</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.13" />
+    <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="10.0.14" />
     <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="3.53.3" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\InvestmentPortfolioTracker.Business\InvestmentPortfolioTracker.Business.csproj" />
+    <ProjectReference Include="..\InvestmentPortfolioTracker.Repository\InvestmentPortfolioTracker.Repository.csproj" />
   </ItemGroup>
 </Project>
