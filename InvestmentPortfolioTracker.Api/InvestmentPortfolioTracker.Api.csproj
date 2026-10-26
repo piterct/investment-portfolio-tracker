@@ -14,6 +14,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\InvestmentPortfolioTracker.Business\InvestmentPortfolioTracker.Business.csproj" />
+    <ProjectReference Include="..\InvestmentPortfolioTracker.Repository\InvestmentPortfolioTracker.Repository.csproj" />
   </ItemGroup>
 
 </Project>
