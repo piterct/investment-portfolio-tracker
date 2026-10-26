@@ -1,6 +1,4 @@
-﻿using InvestmentPortfolioTracker.Business.Interfaces;
-
-namespace InvestmentPortfolioTracker.Business.Notifications
+﻿namespace InvestmentPortfolioTracker.Business.Notifications
 {
     public class Notifier : INotifier
     {
