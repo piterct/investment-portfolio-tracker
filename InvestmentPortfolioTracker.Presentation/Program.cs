@@ -1,9 +1,13 @@
+using InvestmentPortfolioTracker.Business.Models;
+using InvestmentPortfolioTracker.Business.Repositories;
+using InvestmentPortfolioTracker.Business.Shared;
+using InvestmentPortfolioTracker.Repository.Repositories;
+using Microsoft.Data.Sqlite;
 using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using InvestmentPortfolioTracker.Business.Models;
-using Microsoft.Data.Sqlite;
+using InvestmentPortfolioTracker.Repository.DataContext;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddHttpClient("brapi", client =>
@@ -12,6 +16,10 @@ builder.Services.AddHttpClient("brapi", client =>
     client.Timeout = TimeSpan.FromSeconds(15);
     client.DefaultRequestHeaders.UserAgent.ParseAdd("InvestmentPortfolioTracker/1.0");
 });
+
+builder.Services.Configure<Settings>(builder.Configuration.GetSection("Database"));
+builder.Services.AddScoped<InvestmentPortfolioContext>();
+builder.Services.AddScoped<ISettingsRepository, SettingsRepository>();
 
 var app = builder.Build();
 var configuredDirectory = app.Configuration["Database:Directory"];
@@ -35,18 +43,18 @@ app.UseStaticFiles();
 
 app.MapGet("/api/health", () => Results.Ok(new { status = "ok", database = Path.GetFileName(databasePath) }));
 
-app.MapGet("/api/settings", async () =>
+app.MapGet("/api/settings", async (ISettingsRepository settingsRepository) =>
 {
-    var settings = await Database.GetSettingsAsync(connectionString);
+    var settings = await settingsRepository.GetSettingsAsync();
     return Results.Ok(new { patrimony = settings.Patrimony, hasApiToken = !string.IsNullOrWhiteSpace(settings.ApiToken) });
 });
 
-app.MapPut("/api/settings", async (SettingsInput input) =>
+app.MapPut("/api/settings", async (SettingsInput input, ISettingsRepository settingsRepository) =>
 {
     if (input.Patrimony < 0)
         return Results.BadRequest(new { error = "O patrimônio de referência não pode ser negativo." });
 
-    var existing = await Database.GetSettingsAsync(connectionString);
+    var existing = await settingsRepository.GetSettingsAsync();
     var token = input.ClearApiToken
         ? null
         : string.IsNullOrWhiteSpace(input.ApiToken)
@@ -135,13 +143,13 @@ app.MapDelete("/api/assets/{id:int}", async (int id) =>
     return deleted ? Results.NoContent() : Results.NotFound(new { error = "Ativo não encontrado." });
 });
 
-app.MapPost("/api/quotes/refresh", async (IHttpClientFactory httpClientFactory) =>
+app.MapPost("/api/quotes/refresh", async (IHttpClientFactory httpClientFactory, ISettingsRepository settingsRepository) =>
 {
     var assets = await Database.GetAssetsAsync(connectionString);
     if (assets.Count == 0)
         return Results.Ok(new { updated = 0, failed = Array.Empty<object>(), refreshedAt = DateTimeOffset.UtcNow });
 
-    var settings = await Database.GetSettingsAsync(connectionString);
+    var settings = await settingsRepository.GetSettingsAsync();
     var client = httpClientFactory.CreateClient("brapi");
     var updated = 0;
     var failures = new List<object>();
@@ -206,9 +214,9 @@ app.MapPost("/api/quotes/refresh", async (IHttpClientFactory httpClientFactory) 
     return Results.Ok(new { updated, failed = failures, refreshedAt = DateTimeOffset.UtcNow });
 });
 
-app.MapGet("/api/portfolio", async () =>
+app.MapGet("/api/portfolio", async (ISettingsRepository settingsRepository) =>
 {
-    var settings = await Database.GetSettingsAsync(connectionString);
+    var settings = await settingsRepository.GetSettingsAsync();
     var assets = await Database.GetAssetsAsync(connectionString);
     var totalMarketValue = assets.Sum(a => a.CurrentPrice * a.Quantity);
     var referencePatrimony = settings.Patrimony > 0 ? settings.Patrimony : totalMarketValue;
@@ -302,16 +310,6 @@ CREATE TABLE IF NOT EXISTS Settings (
 );
 INSERT OR IGNORE INTO Settings (Id, Patrimony, ApiToken) VALUES (1, 0, NULL);";
         await command.ExecuteNonQueryAsync();
-    }
-
-    public static async Task<AppSettings> GetSettingsAsync(string connectionString)
-    {
-        await using var connection = await OpenAsync(connectionString);
-        await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT Patrimony, ApiToken FROM Settings WHERE Id = 1;";
-        await using var reader = await command.ExecuteReaderAsync();
-        if (!await reader.ReadAsync()) return new AppSettings(0, 0, null);
-        return new AppSettings(0,Convert.ToDecimal(reader.GetDouble(0), CultureInfo.InvariantCulture), reader.IsDBNull(1) ? null : reader.GetString(1));
     }
 
     public static async Task SaveSettingsAsync(string connectionString, decimal patrimony, string? apiToken)
