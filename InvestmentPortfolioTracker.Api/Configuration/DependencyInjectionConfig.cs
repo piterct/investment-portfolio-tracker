@@ -24,6 +24,7 @@ public static class DependencyInjectionConfig
 
         #region Repositories
         services.AddTransient<ISettingsRepository, SettingsRepository>();
+        services.AddTransient<IAssetRepository, AssetRepository>();
         #endregion
 
         return services;
