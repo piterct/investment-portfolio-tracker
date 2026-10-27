@@ -9,7 +9,7 @@ namespace InvestmentPortfolioTracker.Repository.DataContext
     {
         private string? DatabaseDirectory { get; } 
 
-        public string ConnectionString { get;}
+        private string ConnectionString { get;}
 
         public InvestmentPortfolioContext(IOptions<Settings> config, IHostEnvironment environment)
         {
