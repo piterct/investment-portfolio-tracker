@@ -20,6 +20,7 @@ builder.Services.AddHttpClient("brapi", client =>
 builder.Services.Configure<Settings>(builder.Configuration.GetSection("Database"));
 builder.Services.AddScoped<InvestmentPortfolioContext>();
 builder.Services.AddScoped<ISettingsRepository, SettingsRepository>();
+builder.Services.AddScoped<IAssetRepository, AssetRepository>();
 
 var app = builder.Build();
 var configuredDirectory = app.Configuration["Database:Directory"];
@@ -65,7 +66,7 @@ app.MapPut("/api/settings", async (SettingsInput input, ISettingsRepository sett
     return Results.Ok(new { patrimony = input.Patrimony, hasApiToken = !string.IsNullOrWhiteSpace(token) });
 });
 
-app.MapGet("/api/assets", async () => Results.Ok(await Database.GetAssetsAsync(connectionString)));
+app.MapGet("/api/assets", async (IAssetRepository assetRepository) => Results.Ok(await assetRepository.GetAssetsAsync()));
 
 app.MapPost("/api/assets", async (AssetInput input) =>
 {
@@ -143,9 +144,9 @@ app.MapDelete("/api/assets/{id:int}", async (int id) =>
     return deleted ? Results.NoContent() : Results.NotFound(new { error = "Ativo não encontrado." });
 });
 
-app.MapPost("/api/quotes/refresh", async (IHttpClientFactory httpClientFactory, ISettingsRepository settingsRepository) =>
+app.MapPost("/api/quotes/refresh", async (IHttpClientFactory httpClientFactory, ISettingsRepository settingsRepository, IAssetRepository assetRepository) =>
 {
-    var assets = await Database.GetAssetsAsync(connectionString);
+    var assets = await assetRepository.GetAssetsAsync();
     if (assets.Count == 0)
         return Results.Ok(new { updated = 0, failed = Array.Empty<object>(), refreshedAt = DateTimeOffset.UtcNow });
 
@@ -214,10 +215,10 @@ app.MapPost("/api/quotes/refresh", async (IHttpClientFactory httpClientFactory, 
     return Results.Ok(new { updated, failed = failures, refreshedAt = DateTimeOffset.UtcNow });
 });
 
-app.MapGet("/api/portfolio", async (ISettingsRepository settingsRepository) =>
+app.MapGet("/api/portfolio", async (ISettingsRepository settingsRepository, IAssetRepository assetRepository) =>
 {
     var settings = await settingsRepository.GetSettingsAsync();
-    var assets = await Database.GetAssetsAsync(connectionString);
+    var assets = await assetRepository.GetAssetsAsync();
     var totalMarketValue = assets.Sum(a => a.CurrentPrice * a.Quantity);
     var referencePatrimony = settings.Patrimony > 0 ? settings.Patrimony : totalMarketValue;
 
@@ -320,17 +321,6 @@ INSERT OR IGNORE INTO Settings (Id, Patrimony, ApiToken) VALUES (1, 0, NULL);";
         command.Parameters.AddWithValue("$patrimony", patrimony);
         command.Parameters.AddWithValue("$apiToken", (object?)apiToken ?? DBNull.Value);
         await command.ExecuteNonQueryAsync();
-    }
-
-    public static async Task<List<Asset>> GetAssetsAsync(string connectionString)
-    {
-        var list = new List<Asset>();
-        await using var connection = await OpenAsync(connectionString);
-        await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT Id, Ticker, Name, Quantity, TargetPercent, Rating, Notes, CurrentPrice, PriceUpdatedAt, CreatedAt FROM Assets ORDER BY Ticker;";
-        await using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync()) list.Add(ReadAsset(reader));
-        return list;
     }
 
     public static async Task<Asset?> GetAssetByIdAsync(string connectionString, int id)
