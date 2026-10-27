@@ -1,11 +1,12 @@
 ﻿using InvestmentPortfolioTracker.Business.Models;
+using InvestmentPortfolioTracker.Business.Repositories;
 using InvestmentPortfolioTracker.Repository.DataContext;
 using Microsoft.Data.Sqlite;
 using System.Globalization;
 
 namespace InvestmentPortfolioTracker.Repository.Repositories
 {
-    public class AssetRepository(InvestmentPortfolioContext context)
+    public class AssetRepository(InvestmentPortfolioContext context) : IAssetRepository
     {
         public async Task<List<Asset>> GetAssetsAsync()
         {
@@ -22,6 +23,7 @@ namespace InvestmentPortfolioTracker.Repository.Repositories
             await using var reader = await command.ExecuteReaderAsync();
 
             while (await reader.ReadAsync()) list.Add(ReadAsset(reader));
+
             return list;
         }
 
