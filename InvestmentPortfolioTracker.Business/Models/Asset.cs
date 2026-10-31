@@ -24,5 +24,10 @@
         public decimal CurrentPrice { get; set; }
         public DateTimeOffset? PriceUpdatedAt { get; set; }
         public DateTimeOffset CreatedAt { get; set; }
+
+        public decimal GetMarketValue()
+        {
+            return CurrentPrice * Quantity;
+        }
     }
 }
