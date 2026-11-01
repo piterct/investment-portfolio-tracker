@@ -78,6 +78,8 @@
 
   <div class="toast-area" id="toastArea" aria-live="polite"></div>
 
+  <script src="/config/api-endpoints.js"></script>
+  <script src="/services/api-client.js"></script>
   <script src="/components/portfolio-settings.js"></script>
   <script>
     const $ = (id) => document.getElementById(id);
@@ -87,14 +89,6 @@
     let settings = { patrimony: 0, hasApiToken: false };
     let quoteInProgress = false;
 
-    async function api(path, options = {}) {
-      const response = await fetch(path, { ...options, headers: { 'Content-Type': 'application/json', ...(options.headers || {}) } });
-      if (response.status === 204) return null;
-      const contentType = response.headers.get('content-type') || '';
-      const data = contentType.includes('application/json') ? await response.json() : await response.text();
-      if (!response.ok) throw new Error(data?.error || `Falha na solicitação (${response.status}).`);
-      return data;
-    }
     function escapeHtml(value) {
       return String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char]));
     }
@@ -113,7 +107,7 @@
     }
 
     async function loadData() {
-      const [p, s] = await Promise.all([api('/api/portfolio'), api('/api/settings')]);
+      const [p, s] = await Promise.all([ApiClient.getPortfolio(), ApiClient.getSettings()]);
       portfolio = p; settings = s;
       render();
       $('portfolioSettings').setSettings(settings);
@@ -175,7 +169,7 @@
     }
     async function deleteAsset(id, ticker) {
       if (!confirm(`Deseja remover ${ticker} da carteira? Esta ação não pode ser desfeita.`)) return;
-      try { await api(`/api/assets/${id}`, { method: 'DELETE' }); await loadData(); toast(`${ticker} removido da carteira.`); }
+      try { await ApiClient.deleteAsset(id); await loadData(); toast(`${ticker} removido da carteira.`); }
       catch (error) { toast(error.message, 'error'); }
     }
     function numberOrNull(value) { return value.trim() === '' ? null : Number(value); }
@@ -195,7 +189,8 @@
       if (!Number.isInteger(body.quantity) || body.quantity < 0) { toast('A quantidade deve ser um número inteiro igual ou maior que zero.', 'error'); return; }
       const submit = $('saveAssetBtn'); submit.disabled = true; submit.textContent = 'Salvando…';
       try {
-        await api(id ? `/api/assets/${id}` : '/api/assets', { method: id ? 'PUT' : 'POST', body: JSON.stringify(body) });
+        if (id) await ApiClient.updateAsset(id, body);
+        else await ApiClient.createAsset(body);
         $('assetDialog').close(); await loadData(); toast(id ? 'Ativo atualizado com sucesso.' : 'Ativo cadastrado com sucesso.');
       } catch (error) { toast(error.message, 'error'); }
       finally { submit.disabled = false; submit.textContent = id ? 'Salvar alterações' : 'Salvar ativo'; }
@@ -203,7 +198,7 @@
     $('portfolioSettings').addEventListener('portfolio-settings-save', async (event) => {
       const component = $('portfolioSettings');
       component.setSaving(true);
-      try { await api('/api/settings', { method: 'PUT', body: JSON.stringify(event.detail) }); await loadData(); toast('Configurações salvas.'); }
+      try { await ApiClient.saveSettings(event.detail); await loadData(); toast('Configurações salvas.'); }
       catch (error) { toast(error.message, 'error'); }
       finally { component.setSaving(false); }
     });
@@ -213,7 +208,7 @@
       if (quoteInProgress) return;
       quoteInProgress = true; const button = $('refreshBtn'); const oldText = button.innerHTML; button.disabled = true; button.innerHTML = '<span class="spinner"></span> Atualizando…';
       try {
-        const result = await api('/api/quotes/refresh', { method: 'POST', body: '{}' });
+        const result = await ApiClient.refreshQuotes();
         await loadData();
         const failed = result.failed || [];
         showQuoteWarning(failed.length ? `Atualizadas ${result.updated} cotação(ões). Falhas: ${failed.map(f => `${f.ticker}: ${f.error}`).join(' | ')}` : '');
