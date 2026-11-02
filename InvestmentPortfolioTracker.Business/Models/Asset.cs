@@ -29,5 +29,15 @@
         {
             return CurrentPrice * Quantity;
         }
+
+        public decimal GetTargetValue(decimal referencePatrimony)
+        {
+           return referencePatrimony * TargetPercent / 100m;
+        }
+
+        public decimal GetDifference(decimal referencePatrimony)
+        {
+            return GetMarketValue() - GetTargetValue(referencePatrimony);
+        }
     }
 }
