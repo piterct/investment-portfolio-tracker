@@ -9,12 +9,7 @@
         DateTimeOffset? priceUpdatedAt,
         decimal targetPercent,
         int? rating,
-        string notes,
-        decimal marketValue,
-        decimal currentPercent,
-        decimal difference,
-        int quantityToTarget,
-        string recommendation)
+        string notes)
     {
         public int Id { get; set; } = id;
         public string Ticker { get; set; } = ticker;
@@ -25,11 +20,11 @@
         public decimal TargetPercent { get; set; } = targetPercent;
         public int? Rating { get; set; } = rating;
         public string Notes { get; set; } = notes;
-        public decimal MarketValue { get; set; } = marketValue;
-        public decimal CurrentPercent { get; set; } = currentPercent;
+        public decimal MarketValue { get; set; } 
+        public decimal CurrentPercent { get; set; }
         public decimal TargetValue { get; set; }
-        public decimal Difference { get; set; } = difference;
-        public int QuantityToTarget { get; set; } = quantityToTarget;
-        public string Recommendation { get; set; } = recommendation;
+        public decimal Difference { get; set; } 
+        public int QuantityToTarget { get; set; } 
+        public string Recommendation { get; set; }
     }
 }
