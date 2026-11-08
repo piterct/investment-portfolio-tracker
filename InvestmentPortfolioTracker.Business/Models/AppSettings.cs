@@ -11,9 +11,9 @@
         public decimal Patrimony { get; set; }
         public string? ApiToken { get; set; }
 
-        public decimal GetReferencePatrimony()
+        public decimal GetReferencePatrimony(decimal totalMarketValue)
         {
-
+            return Patrimony > 0 ? Patrimony : totalMarketValue;
         }
     }
 }
