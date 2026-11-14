@@ -9,15 +9,21 @@ class PortfolioSettings extends HTMLElement {
   }
 
   async initialize() {
-    const templateResponse = await fetch('/components/portfolio/portfolio-settings.html');
-    if (!templateResponse.ok) {
+    const [templateResponse, stylesResponse] = await Promise.all([
+      fetch('/components/portfolio/portfolio-settings.html'),
+      fetch('/components/portfolio/portfolio-settings.css')
+    ]);
+
+    if (!templateResponse.ok || !stylesResponse.ok) {
       throw new Error('Não foi possível carregar as configurações da carteira.');
     }
 
-    const template = await templateResponse.text();
-    this.shadowRoot.innerHTML = `
-      <link rel="stylesheet" href="/components/portfolio/portfolio-settings.css">
-      ${template}`;
+    const [template, styles] = await Promise.all([
+      templateResponse.text(),
+      stylesResponse.text()
+    ]);
+
+    this.shadowRoot.innerHTML = `<style>${styles}</style>${template}`;
 
     this.form.addEventListener('submit', (event) => this.handleSubmit(event));
     this.clearToken.addEventListener('change', () => {

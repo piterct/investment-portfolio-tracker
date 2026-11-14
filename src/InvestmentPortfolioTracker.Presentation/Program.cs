@@ -10,6 +10,7 @@ using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using InvestmentPortfolioTracker.Business.Notifications;
+using Microsoft.AspNetCore.Mvc;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddHttpClient("brapi", client =>
@@ -25,6 +26,13 @@ builder.Services.AddScoped<ISettingsRepository, SettingsRepository>();
 builder.Services.AddScoped<IAssetRepository, AssetRepository>();
 builder.Services.AddScoped<INotifier, Notifier>();
 builder.Services.AddScoped<IPortfolioService, PortfolioService>();
+builder.Services.AddControllers();
+builder.Services.AddApiVersioning(options =>
+{
+    options.AssumeDefaultVersionWhenUnspecified = true;
+    options.DefaultApiVersion = new ApiVersion(1, 0);
+    options.ReportApiVersions = true;
+});
 
 var app = builder.Build();
 var configuredDirectory = app.Configuration["Database:Directory"];
@@ -45,6 +53,7 @@ await Database.InitializeAsync(connectionString);
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
+app.MapControllers();
 
 app.MapGet("/api/health", () => Results.Ok(new { status = "ok", database = Path.GetFileName(databasePath) }));
 
@@ -218,10 +227,6 @@ app.MapPost("/api/quotes/refresh", async (IHttpClientFactory httpClientFactory, 
     await Task.WhenAll(tasks);
     return Results.Ok(new { updated, failed = failures, refreshedAt = DateTimeOffset.UtcNow });
 });
-
-app.MapGet("/api/portfolio", async (ISettingsRepository settingsRepository, IAssetRepository assetRepository, IPortfolioService portfolioService)
-
-    => Results.Ok((object?)await portfolioService.GetPortFolioAsync()));
 
 app.Run();
 

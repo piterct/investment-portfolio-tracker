@@ -6,11 +6,16 @@
     <RootNamespace>InvestmentPortfolioTracker</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Versioning.ApiExplorer" Version="5.1.0" />
     <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="10.0.14" />
     <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="3.53.3" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\InvestmentPortfolioTracker.Business\InvestmentPortfolioTracker.Business.csproj" />
     <ProjectReference Include="..\InvestmentPortfolioTracker.Repository\InvestmentPortfolioTracker.Repository.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\InvestmentPortfolioTracker.Api\Controllers\MainController.cs" Link="Controllers\MainController.cs" />
+    <Compile Include="..\InvestmentPortfolioTracker.Api\Controllers\V1\PortfolioController.cs" Link="Controllers\PortfolioController.cs" />
   </ItemGroup>
 </Project>
