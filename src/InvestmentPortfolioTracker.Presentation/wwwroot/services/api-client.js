@@ -22,7 +22,11 @@ async function request(path, options = {}) {
 }
 
 window.ApiClient = Object.freeze({
-  getPortfolio: () => request(ApiEndpoints.portfolio),
+  getPortfolio: (pageNumber = 1, pageSize = 10, searchTerm = '') => {
+    const query = new URLSearchParams({ pageNumber: String(pageNumber), pageSize: String(pageSize) });
+    if (searchTerm) query.set('search', searchTerm);
+    return request(`${ApiEndpoints.portfolio}?${query}`);
+  },
   getSettings: () => request(ApiEndpoints.settings),
   saveSettings: (settings) => request(ApiEndpoints.settings, {
     method: 'PUT',
