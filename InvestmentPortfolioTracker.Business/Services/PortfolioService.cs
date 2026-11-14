@@ -8,17 +8,27 @@ namespace InvestmentPortfolioTracker.Business.Services
     public class PortfolioService(INotifier notifier, ISettingsRepository settingsRepository, IAssetRepository assetRepository)
         : BaseService(notifier), IPortfolioService
     {
-        public async Task<object> GetPortFolioAsync()
+        public async Task<PortfolioResponseDto> GetPortFolioAsync()
         {
             var settings = await settingsRepository.GetSettingsAsync();
             var assets = await assetRepository.GetAssetsAsync();
             var totalMarketValue = SumTotalMarketValue(assets);
             var referencePatrimony = settings.GetReferencePatrimony(totalMarketValue);
 
-           var assetsList = CreateAssetsDto(assets, referencePatrimony);
+            var assetsList = CreateAssetsDto(assets, referencePatrimony);
 
-           return Task.FromResult(CreatePortfolioResponseDto(referencePatrimony, settings.Patrimony, totalMarketValue, assets.Count,
-               assets.Sum(a => a.TargetPercent), referencePatrimony, assetsList));
+            var investedPercent = referencePatrimony > 0
+                ? totalMarketValue / referencePatrimony * 100m
+                : 0m;
+
+            return CreatePortfolioResponseDto(
+                referencePatrimony,
+                settings.Patrimony,
+                totalMarketValue,
+                assets.Count,
+                assets.Sum(a => a.TargetPercent),
+                investedPercent,
+                assetsList);
         }
 
         private static List<PortfolioAssetAllocationDto> CreateAssetsDto(List<Asset> assets, decimal referencePatrimony)
@@ -27,13 +37,23 @@ namespace InvestmentPortfolioTracker.Business.Services
 
             foreach (var asset in assets)
             {
+                var marketValue = asset.MarketValue();
+                var targetValue = asset.TargetValue(referencePatrimony);
+                var difference = targetValue - marketValue;
+                var quantityToTarget = asset.CurrentPrice > 0
+                    ? decimal.ToInt32(decimal.Truncate(difference / asset.CurrentPrice))
+                    : 0;
+
                 var portFolioAssetAllocation = new PortfolioAssetAllocationDto(asset.Id, asset.Ticker, asset.Name, asset.Quantity, asset.CurrentPrice, asset.PriceUpdatedAt, asset.TargetPercent, asset.Rating, asset.Notes)
                     {
-                        MarketValue = asset.MarketValue(),
-                        TargetPercent = asset.TargetValue(referencePatrimony),
-                        Difference = asset.Difference(referencePatrimony),
-                        QuantityToTarget = asset.QuantityToTarget(referencePatrimony),
-                        Recommendation = asset.Recommendation(referencePatrimony)
+                        MarketValue = marketValue,
+                        TargetValue = targetValue,
+                        CurrentPercent = referencePatrimony > 0
+                            ? marketValue / referencePatrimony * 100m
+                            : 0m,
+                        Difference = difference,
+                        QuantityToTarget = quantityToTarget,
+                        Recommendation = quantityToTarget > 0 ? "Comprar" : "Aguardar"
                     };
 
                 portFolioAssetAllocationList.Add(portFolioAssetAllocation);
