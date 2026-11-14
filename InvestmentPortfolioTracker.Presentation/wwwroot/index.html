@@ -78,9 +78,9 @@
 
   <div class="toast-area" id="toastArea" aria-live="polite"></div>
 
-  <script src="/config/api-endpoints.js"></script>
-  <script src="/services/api-client.js"></script>
-  <script src="/components/portfolio-settings.js"></script>
+  <script src="/config/api-endpoints.js?v=2"></script>
+  <script src="/services/api-client.js?v=2"></script>
+  <script src="/components/portfolio/portfolio-settings.js?v=1"></script>
   <script>
     const $ = (id) => document.getElementById(id);
     const money = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -107,6 +107,7 @@
     }
 
     async function loadData() {
+      await $('portfolioSettings').ready;
       const [p, s] = await Promise.all([ApiClient.getPortfolio(), ApiClient.getSettings()]);
       portfolio = p; settings = s;
       render();
