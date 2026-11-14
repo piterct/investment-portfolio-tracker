@@ -1,4 +1,6 @@
-﻿namespace InvestmentPortfolioTracker.Business.Models
+﻿using System.Globalization;
+
+namespace InvestmentPortfolioTracker.Business.Models
 {
     public class Asset : Entity
     {
@@ -25,19 +27,29 @@
         public DateTimeOffset? PriceUpdatedAt { get; set; }
         public DateTimeOffset CreatedAt { get; set; }
 
-        public decimal GetMarketValue()
+        public decimal MarketValue()
         {
             return CurrentPrice * Quantity;
         }
 
-        public decimal GetTargetValue(decimal referencePatrimony)
+        public decimal TargetValue(decimal referencePatrimony)
         {
            return referencePatrimony * TargetPercent / 100m;
         }
 
-        public decimal GetDifference(decimal referencePatrimony)
+        public decimal Difference(decimal referencePatrimony)
         {
-            return GetMarketValue() - GetTargetValue(referencePatrimony);
+            return MarketValue() - TargetValue(referencePatrimony);
+        }
+
+        public int QuantityToTarget(decimal referencePatrimony)
+        {
+            return CurrentPrice > 0 ? decimal.ToInt32(decimal.Truncate(Difference(referencePatrimony) / CurrentPrice)) : 0;
+        }
+
+        public string Recommendation(decimal referencePatrimony)
+        {
+            return QuantityToTarget(referencePatrimony) > 0 ? "Comprar" : "Aguardar";
         }
     }
 }

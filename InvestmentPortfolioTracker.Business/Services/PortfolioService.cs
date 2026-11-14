@@ -15,37 +15,10 @@ namespace InvestmentPortfolioTracker.Business.Services
             var totalMarketValue = SumTotalMarketValue(assets);
             var referencePatrimony = settings.GetReferencePatrimony(totalMarketValue);
 
-            CreateAssetsDto(assets, referencePatrimony);
+           var assetsList = CreateAssetsDto(assets, referencePatrimony);
 
-
-            assets.Select(a =>
-            {
-                var marketValue = a.CurrentPrice * a.Quantity;
-                var targetValue = referencePatrimony * a.TargetPercent / 100m;
-                var difference = targetValue - marketValue;
-                var quantityToTarget = a.CurrentPrice > 0 ? decimal.ToInt32(decimal.Truncate(difference / a.CurrentPrice)) : 0;
-              
-                return new
-                {
-                    a.Id,
-                    a.Ticker,
-                    a.Name,
-                    a.Quantity,
-                    a.CurrentPrice,
-                    a.PriceUpdatedAt,
-                    a.TargetPercent,
-                    a.Rating,
-                    a.Notes,
-                    MarketValue = marketValue,
-                    TargetValue = targetValue,
-                    Difference = difference,
-                    CurrentPercent = referencePatrimony > 0 ? marketValue / referencePatrimony * 100m : 0m,
-                    QuantityToTarget = quantityToTarget,
-                    Recommendation = quantityToTarget > 0 ? "Comprar" : "Aguardar"
-                };
-            }).ToList();
-
-            return Task.FromResult(new object());
+           return Task.FromResult(CreatePortfolioResponseDto(referencePatrimony, settings.Patrimony, totalMarketValue, assets.Count,
+               assets.Sum(a => a.TargetPercent), referencePatrimony, assetsList));
         }
 
         private static List<PortfolioAssetAllocationDto> CreateAssetsDto(List<Asset> assets, decimal referencePatrimony)
@@ -69,7 +42,24 @@ namespace InvestmentPortfolioTracker.Business.Services
             return portFolioAssetAllocationList;
         }
 
-        private decimal SumTotalMarketValue(List<Asset> assetList)
+        private static PortfolioResponseDto CreatePortfolioResponseDto(decimal patrimony, decimal configuredPatrimony, decimal totalMarketValue,
+            int assetCount, decimal targetPercentTotal, decimal investedPercent, List<PortfolioAssetAllocationDto> assets)
+        {
+            var portfolioResponseDto = new PortfolioResponseDto
+            {
+                Patrimony = patrimony,
+                ConfiguredPatrimony = configuredPatrimony,
+                TotalMarketValue = totalMarketValue,
+                AssetCount = assetCount,
+                TargetPercentTotal = targetPercentTotal,
+                InvestedPercent = investedPercent,
+                Assets = assets
+            };
+
+            return portfolioResponseDto;
+        }
+
+        private static decimal SumTotalMarketValue(List<Asset> assetList)
         {
             return assetList.Sum(a => a.CurrentPrice * a.Quantity);
         }
