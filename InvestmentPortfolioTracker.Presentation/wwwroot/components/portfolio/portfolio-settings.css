@@ -1,0 +1,116 @@
+:host {
+  display: block;
+  margin-top: 18px;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  padding: 17px 20px;
+  border: 1px solid var(--line, #30414d);
+  border-radius: 14px;
+  background: var(--panel, #17232b);
+}
+
+.settings-info strong {
+  display: block;
+  font-size: 13px;
+}
+
+.settings-info span {
+  display: block;
+  color: var(--muted, #9cafbb);
+  font-size: 11px;
+  margin-top: 4px;
+}
+
+form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+label {
+  color: var(--muted, #9cafbb);
+  font-size: 11px;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+input[type='number'],
+input[type='password'] {
+  width: 170px;
+  min-width: 0;
+  background: #101a21;
+  border: 1px solid #3a4e5b;
+  border-radius: 9px;
+  padding: 10px 11px;
+  color: var(--text, #eff6fa);
+  font: inherit;
+}
+
+input::placeholder {
+  color: #708590;
+}
+
+input:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--teal, #22d3c5);
+  outline-offset: 2px;
+}
+
+button {
+  cursor: pointer;
+  border: 1px solid var(--teal, #22d3c5);
+  background: var(--teal, #22d3c5);
+  color: #062229;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font: inherit;
+  font-weight: 700;
+  font-size: 12px;
+}
+
+button:disabled {
+  cursor: wait;
+  opacity: 0.75;
+}
+
+.token-status {
+  color: var(--muted, #9cafbb);
+  font-size: 10px;
+  max-width: 260px;
+}
+
+.checkbox {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  margin-top: 12px;
+}
+
+.checkbox input {
+  accent-color: var(--teal, #22d3c5);
+}
+
+@media (max-width: 600px) {
+  form {
+    width: 100%;
+  }
+
+  .field {
+    flex: 1;
+  }
+
+  .field input {
+    width: 100%;
+  }
+}
