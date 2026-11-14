@@ -12,9 +12,10 @@ namespace InvestmentPortfolioTracker.Business.Services
         {
             var settings = await settingsRepository.GetSettingsAsync();
             var assets = await assetRepository.GetAssetsAsync();
-            var totalMarketValue = assets.Sum(a => a.CurrentPrice * a.Quantity);
-            var referencePatrimony = settings.Patrimony > 0 ? settings.Patrimony : totalMarketValue;
-            CreateAssetsDto(assets);
+            var totalMarketValue = SumTotalMarketValue(assets);
+            var referencePatrimony = settings.GetReferencePatrimony(totalMarketValue);
+
+            CreateAssetsDto(assets, referencePatrimony);
 
 
             assets.Select(a =>
@@ -47,25 +48,31 @@ namespace InvestmentPortfolioTracker.Business.Services
             return Task.FromResult(new object());
         }
 
-        private static List<PortfolioAssetAllocationDto> CreateAssetsDto(List<Asset> assets)
+        private static List<PortfolioAssetAllocationDto> CreateAssetsDto(List<Asset> assets, decimal referencePatrimony)
         {
             var portFolioAssetAllocationList = new List<PortfolioAssetAllocationDto>();
 
             foreach (var asset in assets)
             {
-                var portFolioAssetAllocation = new PortfolioAssetAllocationDto(asset.Id, asset.Ticker, asset.Name, asset.Quantity, asset.CurrentPrice, asset.PriceUpdatedAt, asset.TargetPercent, asset.Rating, asset.Notes);
-
-                portFolioAssetAllocation.MarketValue = asset.GetMarketValue();
-                portFolioAssetAllocation.TargetPercent = asset.GetTargetValue();
+                var portFolioAssetAllocation = new PortfolioAssetAllocationDto(asset.Id, asset.Ticker, asset.Name, asset.Quantity, asset.CurrentPrice, asset.PriceUpdatedAt, asset.TargetPercent, asset.Rating, asset.Notes)
+                    {
+                        MarketValue = asset.MarketValue(),
+                        TargetPercent = asset.TargetValue(referencePatrimony),
+                        Difference = asset.Difference(referencePatrimony),
+                        QuantityToTarget = asset.QuantityToTarget(referencePatrimony),
+                        Recommendation = asset.Recommendation(referencePatrimony)
+                    };
 
                 portFolioAssetAllocationList.Add(portFolioAssetAllocation);
-
-
             }
 
             return portFolioAssetAllocationList;
         }
 
-        private 
+        private decimal SumTotalMarketValue(List<Asset> assetList)
+        {
+            return assetList.Sum(a => a.CurrentPrice * a.Quantity);
+        }
+
     }
 }
