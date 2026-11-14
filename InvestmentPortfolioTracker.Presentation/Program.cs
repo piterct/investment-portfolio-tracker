@@ -1,13 +1,15 @@
 using InvestmentPortfolioTracker.Business.Models;
 using InvestmentPortfolioTracker.Business.Repositories;
+using InvestmentPortfolioTracker.Business.Services;
 using InvestmentPortfolioTracker.Business.Shared;
+using InvestmentPortfolioTracker.Repository.DataContext;
 using InvestmentPortfolioTracker.Repository.Repositories;
 using Microsoft.Data.Sqlite;
 using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using InvestmentPortfolioTracker.Repository.DataContext;
+using InvestmentPortfolioTracker.Business.Notifications;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddHttpClient("brapi", client =>
@@ -21,6 +23,8 @@ builder.Services.Configure<Settings>(builder.Configuration.GetSection("Database"
 builder.Services.AddScoped<InvestmentPortfolioContext>();
 builder.Services.AddScoped<ISettingsRepository, SettingsRepository>();
 builder.Services.AddScoped<IAssetRepository, AssetRepository>();
+builder.Services.AddScoped<INotifier, Notifier>();
+builder.Services.AddScoped<IPortfolioService, PortfolioService>();
 
 var app = builder.Build();
 var configuredDirectory = app.Configuration["Database:Directory"];
@@ -215,50 +219,9 @@ app.MapPost("/api/quotes/refresh", async (IHttpClientFactory httpClientFactory, 
     return Results.Ok(new { updated, failed = failures, refreshedAt = DateTimeOffset.UtcNow });
 });
 
-app.MapGet("/api/portfolio", async (ISettingsRepository settingsRepository, IAssetRepository assetRepository) =>
-{
-    var settings = await settingsRepository.GetSettingsAsync();
-    var assets = await assetRepository.GetAssetsAsync();
-    var totalMarketValue = assets.Sum(a => a.CurrentPrice * a.Quantity);
-    var referencePatrimony = settings.Patrimony > 0 ? settings.Patrimony : totalMarketValue;
+app.MapGet("/api/portfolio", async (ISettingsRepository settingsRepository, IAssetRepository assetRepository, IPortfolioService portfolioService)
 
-    var calculatedAssets = assets.Select(a =>
-    {
-        var marketValue = a.CurrentPrice * a.Quantity;
-        var targetValue = referencePatrimony * a.TargetPercent / 100m;
-        var difference = targetValue - marketValue;
-        var quantityToTarget = a.CurrentPrice > 0 ? decimal.ToInt32(decimal.Truncate(difference / a.CurrentPrice)) : 0;
-        return new
-        {
-            a.Id,
-            a.Ticker,
-            a.Name,
-            a.Quantity,
-            a.CurrentPrice,
-            a.PriceUpdatedAt,
-            a.TargetPercent,
-            a.Rating,
-            a.Notes,
-            MarketValue = marketValue,
-            CurrentPercent = referencePatrimony > 0 ? marketValue / referencePatrimony * 100m : 0m,
-            TargetValue = targetValue,
-            Difference = difference,
-            QuantityToTarget = quantityToTarget,
-            Recommendation = quantityToTarget > 0 ? "Comprar" : "Aguardar"
-        };
-    }).ToList();
-
-    return Results.Ok(new
-    {
-        patrimony = referencePatrimony,
-        configuredPatrimony = settings.Patrimony,
-        totalMarketValue,
-        assetCount = assets.Count,
-        targetPercentTotal = assets.Sum(a => a.TargetPercent),
-        investedPercent = referencePatrimony > 0 ? totalMarketValue / referencePatrimony * 100m : 0m,
-        assets = calculatedAssets
-    });
-});
+    => Results.Ok((object?)await portfolioService.GetPortFolioAsync()));
 
 app.Run();
 
