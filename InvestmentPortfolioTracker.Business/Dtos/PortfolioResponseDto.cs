@@ -8,6 +8,6 @@
         public int AssetCount { get; set; }
         public decimal TargetPercentTotal { get; set; }
         public decimal InvestedPercent { get; set; }
-        public List<PortfolioAssetAllocationDto> Assets { get; set; }
+        public List<PortfolioAssetAllocationDto> Assets { get; set; } = null!;
     }
 }
