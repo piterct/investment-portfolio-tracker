@@ -1,5 +1,6 @@
 ﻿using InvestmentPortfolioTracker.Business.Notifications;
 using InvestmentPortfolioTracker.Business.Repositories;
+using InvestmentPortfolioTracker.Business.Services;
 using InvestmentPortfolioTracker.Business.Shared;
 using InvestmentPortfolioTracker.Repository.DataContext;
 using InvestmentPortfolioTracker.Repository.Repositories;
@@ -20,6 +21,10 @@ public static class DependencyInjectionConfig
 
         #region Configurations
         services.AddScoped<InvestmentPortfolioContext, InvestmentPortfolioContext>();
+        #endregion
+
+        #region
+        services.AddScoped<IPortfolioService, PortfolioService>();
         #endregion
 
         #region Repositories
