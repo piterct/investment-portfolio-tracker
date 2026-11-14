@@ -1,6 +1,6 @@
 window.ApiEndpoints = Object.freeze({
   health: '/api/health',
-  portfolio: '/api/portfolio',
+  portfolio: '/api/v1/portfolio',
   settings: '/api/settings',
   assets: '/api/assets',
   asset: (id) => `/api/assets/${encodeURIComponent(id)}`,
