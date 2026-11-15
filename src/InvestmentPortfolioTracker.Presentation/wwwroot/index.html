@@ -22,7 +22,7 @@
   <main class="shell">
     <header class="topline">
       <div class="brand"><div class="logo">↗</div><div><div class="eyebrow">Finanças pessoais</div><h1>Controle de Carteira</h1></div></div>
-      <div class="top-actions"><div class="status"><span class="dot"></span><span id="dbStatus">Banco local conectado</span></div><button class="btn ghost" id="refreshBtn" type="button">↻ Atualizar cotações</button><button class="btn primary" id="addBtn" type="button">＋ Novo ativo</button></div>
+      <div class="top-actions"><div class="status"><span class="dot"></span><span id="dbStatus">Banco local conectado</span></div><button class="btn ghost" id="refreshBtn" type="button" title="Atualiza somente os ativos exibidos nesta página">↻ Atualizar cotações visíveis</button><button class="btn primary" id="addBtn" type="button">＋ Novo ativo</button></div>
     </header>
 
     <section class="intro">
@@ -49,6 +49,7 @@
         </table>
       </div>
       <div class="table-foot"><div class="legend"><span><i style="background:var(--teal)"></i>Comprar: faltam cotas inteiras para chegar ao alvo</span><span><i style="background:var(--orange)"></i>Aguardar: alvo atingido ou posição acima do ideal</span></div><div id="lastUpdated">Cotação ainda não atualizada</div></div>
+      <pagination-control id="portfolioPagination"></pagination-control>
     </section>
 
     <div id="quoteWarning" class="quote-warning"></div>
@@ -79,7 +80,8 @@
   <div class="toast-area" id="toastArea" aria-live="polite"></div>
 
   <script src="/config/api-endpoints.js?v=2"></script>
-  <script src="/services/api-client.js?v=2"></script>
+  <script src="/services/api-client.js?v=4"></script>
+  <script src="/components/pagination-control/pagination-control.js?v=1"></script>
   <script src="/components/portfolio/portfolio-settings.js?v=1"></script>
   <script>
     const $ = (id) => document.getElementById(id);
@@ -88,6 +90,11 @@
     let portfolio = null;
     let settings = { patrimony: 0, hasApiToken: false };
     let quoteInProgress = false;
+    let pageNumber = 1;
+    let pageSize = 10;
+    let searchTerm = '';
+    let portfolioLoadSequence = 0;
+    let searchDebounce;
 
     function escapeHtml(value) {
       return String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char]));
@@ -107,11 +114,33 @@
     }
 
     async function loadData() {
-      await $('portfolioSettings').ready;
-      const [p, s] = await Promise.all([ApiClient.getPortfolio(), ApiClient.getSettings()]);
-      portfolio = p; settings = s;
-      render();
-      $('portfolioSettings').setSettings(settings);
+      const loadSequence = ++portfolioLoadSequence;
+      const paginationControl = $('portfolioPagination');
+      paginationControl.setLoading(true);
+      try {
+        await Promise.all([$('portfolioSettings').ready, paginationControl.ready]);
+        let [p, s] = await Promise.all([
+          ApiClient.getPortfolio(pageNumber, pageSize, searchTerm),
+          ApiClient.getSettings()
+        ]);
+
+        if (loadSequence !== portfolioLoadSequence) return;
+
+        const lastValidPage = Math.max(1, p.pagination.totalPages);
+        if (pageNumber > lastValidPage) {
+          pageNumber = lastValidPage;
+          p = await ApiClient.getPortfolio(pageNumber, pageSize, searchTerm);
+        }
+
+        if (loadSequence !== portfolioLoadSequence) return;
+        portfolio = p;
+        settings = s;
+        paginationControl.setPagination(p.pagination);
+        render();
+        $('portfolioSettings').setSettings(settings);
+      } finally {
+        if (loadSequence === portfolioLoadSequence) paginationControl.setLoading(false);
+      }
     }
     function render() {
       if (!portfolio) return;
@@ -124,11 +153,17 @@
       const targetDiff = Number(portfolio.targetPercentTotal) - 100;
       $('mTargetFoot').textContent = Math.abs(targetDiff) < .005 ? 'Distribuição ideal totalizada em 100%' : targetDiff < 0 ? `Faltam ${fmtPct(Math.abs(targetDiff))} para completar 100%` : `Excede o total em ${fmtPct(targetDiff)}`;
       $('mTargetFoot').style.color = Math.abs(targetDiff) < .005 ? 'var(--teal)' : 'var(--orange)';
-      $('tableSub').textContent = `${portfolio.assetCount} ativo(s) · os percentuais são calculados sobre o patrimônio de referência`;
-      const assets = portfolio.assets.filter(a => `${a.ticker} ${a.name} ${a.notes}`.toLowerCase().includes($('searchInput').value.toLowerCase().trim()));
+      $('tableSub').textContent = searchTerm
+        ? `${portfolio.pagination.totalItems} resultado(s) · os percentuais são calculados sobre o patrimônio de referência`
+        : `${portfolio.assetCount} ativo(s) · os percentuais são calculados sobre o patrimônio de referência`;
+      const assets = portfolio.assets;
       const tbody = $('assetRows');
       if (!assets.length) {
-        tbody.innerHTML = `<tr><td colspan="12"><div class="empty"><strong>${portfolio.assets.length ? 'Nenhum resultado' : 'Sua carteira ainda está vazia'}</strong>${portfolio.assets.length ? 'Tente outro ticker ou descrição.' : 'Cadastre seu primeiro ativo para começar a calcular os alvos.'}${portfolio.assets.length ? '' : '<br><br><button class="btn primary" onclick="openAddDialog()">＋ Cadastrar primeiro ativo</button>'}</div></td></tr>`;
+        const hasAssets = portfolio.assetCount > 0;
+        const hasSearch = Boolean(searchTerm);
+        const title = hasAssets || hasSearch ? 'Nenhum resultado' : 'Sua carteira ainda está vazia';
+        const message = hasSearch ? 'Tente outro ticker ou descrição.' : 'Cadastre seu primeiro ativo para começar a calcular os alvos.';
+        tbody.innerHTML = `<tr><td colspan="12"><div class="empty"><strong>${title}</strong>${message}${hasAssets || hasSearch ? '' : '<br><br><button class="btn primary" onclick="openAddDialog()">＋ Cadastrar primeiro ativo</button>'}</div></td></tr>`;
       } else {
         tbody.innerHTML = assets.map(a => {
           const qty = Number(a.quantityToTarget || 0);
@@ -148,12 +183,13 @@
             <td class="${diffClass}">${Number(a.difference) > 0 ? '+' : ''}${fmtMoney(a.difference)}</td>
             <td><span class="pill ${actionClass}">${qty > 0 ? '↗ Comprar' : '• Aguardar'}</span></td>
             <td class="number ${qty > 0 ? 'positive' : qty < 0 ? 'negative' : ''}">${qty > 0 ? '+' : ''}${qty.toLocaleString('pt-BR')}</td>
-            <td><div class="row-actions"><button class="icon-btn" title="Editar ativo" aria-label="Editar ${escapeHtml(a.ticker)}" onclick="editAsset(${a.id})">✎</button><button class="icon-btn" title="Excluir ativo" aria-label="Excluir ${escapeHtml(a.ticker)}" onclick="deleteAsset(${a.id}, '${escapeHtml(a.ticker).replace(/'/g, "\\'")}')">×</button><button class="icon-btn" title="Ver anotações" aria-label="Ver anotações ${escapeHtml(a.ticker)}" onclick="viewNotes(${a.id})">☰</button></div></td>
+            <td><div class="row-actions"><button class="icon-btn" title="Atualizar cotação" aria-label="Atualizar cotação de ${escapeHtml(a.ticker)}" onclick="refreshAssetQuote(${a.id})">↻</button><button class="icon-btn" title="Editar ativo" aria-label="Editar ${escapeHtml(a.ticker)}" onclick="editAsset(${a.id})">✎</button><button class="icon-btn" title="Excluir ativo" aria-label="Excluir ${escapeHtml(a.ticker)}" onclick="deleteAsset(${a.id}, '${escapeHtml(a.ticker).replace(/'/g, "\\'")}')">×</button><button class="icon-btn" title="Ver anotações" aria-label="Ver anotações ${escapeHtml(a.ticker)}" onclick="viewNotes(${a.id})">☰</button></div></td>
           </tr>`;
         }).join('');
       }
-      const updatedDates = portfolio.assets.map(a => a.priceUpdatedAt).filter(Boolean).sort();
-      $('lastUpdated').textContent = updatedDates.length ? `Cotação mais recente salva: ${formatDate(updatedDates[updatedDates.length - 1])}` : 'Cotações ainda não atualizadas';
+      $('lastUpdated').textContent = portfolio.latestPriceUpdatedAt
+        ? `Cotação mais recente salva: ${formatDate(portfolio.latestPriceUpdatedAt)}`
+        : 'Cotações ainda não atualizadas';
     }
 
     function openAddDialog() {
@@ -173,12 +209,52 @@
       try { await ApiClient.deleteAsset(id); await loadData(); toast(`${ticker} removido da carteira.`); }
       catch (error) { toast(error.message, 'error'); }
     }
+    async function refreshAssetQuote(id) {
+      if (quoteInProgress) return;
+      const ticker = portfolio?.assets.find(asset => asset.id === id)?.ticker || 'ativo';
+      quoteInProgress = true;
+      try {
+        const result = await ApiClient.refreshAssetQuote(id);
+        const failure = result.failed?.[0];
+        if (failure) {
+          showQuoteWarning(`${failure.ticker}: ${failure.error}`);
+          toast(`${failure.ticker}: ${failure.error}`, 'error');
+          return;
+        }
+
+        await loadData();
+        showQuoteWarning('');
+        toast(`Cotação de ${ticker} atualizada.`);
+      } catch (error) {
+        showQuoteWarning(error.message);
+        toast(error.message, 'error');
+      } finally {
+        quoteInProgress = false;
+      }
+    }
     function numberOrNull(value) { return value.trim() === '' ? null : Number(value); }
 
     $('addBtn').addEventListener('click', openAddDialog);
+    $('portfolioPagination').addEventListener('pagination-change', async (event) => {
+      pageNumber = event.detail.pageNumber;
+      pageSize = event.detail.pageSize;
+      try {
+        await loadData();
+        await refreshQuotes(true);
+      }
+      catch (error) { toast(error.message, 'error'); }
+    });
     $('closeDialog').addEventListener('click', () => $('assetDialog').close());
     $('cancelDialog').addEventListener('click', () => $('assetDialog').close());
-    $('searchInput').addEventListener('input', render);
+    $('searchInput').addEventListener('input', () => {
+      clearTimeout(searchDebounce);
+      searchDebounce = setTimeout(async () => {
+        searchTerm = $('searchInput').value.trim();
+        pageNumber = 1;
+        try { await loadData(); }
+        catch (error) { toast(error.message, 'error'); }
+      }, 250);
+    });
     $('assetForm').addEventListener('submit', async (event) => {
       event.preventDefault();
       const id = $('assetId').value;
@@ -208,26 +284,50 @@
     async function refreshQuotes(silent) {
       if (quoteInProgress) return;
       quoteInProgress = true; const button = $('refreshBtn'); const oldText = button.innerHTML; button.disabled = true; button.innerHTML = '<span class="spinner"></span> Atualizando…';
+      $('portfolioPagination').setLoading(true);
       try {
-        const result = await ApiClient.refreshQuotes();
+        const result = await ApiClient.refreshQuotes(pageNumber, pageSize, searchTerm);
         await loadData();
         const failed = result.failed || [];
         showQuoteWarning(failed.length ? `Atualizadas ${result.updated} cotação(ões). Falhas: ${failed.map(f => `${f.ticker}: ${f.error}`).join(' | ')}` : '');
-        if (!silent) toast(failed.length ? `${result.updated} cotação(ões) atualizadas; ${failed.length} falharam. Veja os detalhes abaixo da tabela.` : `${result.updated} cotação(ões) atualizadas.`, failed.length ? 'error' : 'success');
+        const skipped = result.skipped || 0;
+        if (!silent) toast(failed.length
+          ? `${result.updated} cotação(ões) atualizadas; ${skipped} recentes ignoradas; ${failed.length} falharam. Veja os detalhes abaixo da tabela.`
+          : `${result.updated} cotação(ões) atualizadas; ${skipped} recentes ignoradas.`, failed.length ? 'error' : 'success');
       } catch (error) { showQuoteWarning(error.message); if (!silent) toast(error.message, 'error'); }
-      finally { button.disabled = false; button.innerHTML = oldText; quoteInProgress = false; }
+      finally {
+        button.disabled = false;
+        button.innerHTML = oldText;
+        quoteInProgress = false;
+        $('portfolioPagination').setLoading(false);
+      }
     }
-    $('exportBtn').addEventListener('click', () => {
-      if (!portfolio?.assets.length) { toast('Cadastre pelo menos um ativo antes de exportar.', 'error'); return; }
-      const headers = ['Ticker','Nome','Quantidade','Preço atual','Valor de mercado','Nota','Carteira ideal (%)','Carteira atual (%)','Alvo (R$)','Diferença (R$)','Quantidade para alvo','Plano','Anotações'];
-      const rows = portfolio.assets.map(a => [a.ticker,a.name,a.quantity,a.currentPrice,a.marketValue,a.rating ?? '',a.targetPercent,a.currentPercent,a.targetValue,a.difference,a.quantityToTarget,a.recommendation,a.notes]);
-      const csv = [headers, ...rows].map(row => row.map(value => `"${String(value ?? '').replace(/"/g, '""')}"`).join(';')).join('\r\n');
-      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'carteira-investimentos.csv'; a.click(); URL.revokeObjectURL(url);
+    $('exportBtn').addEventListener('click', async () => {
+      if (!portfolio?.assetCount) { toast('Cadastre pelo menos um ativo antes de exportar.', 'error'); return; }
+      const button = $('exportBtn');
+      button.disabled = true;
+      try {
+        const firstPage = await ApiClient.getPortfolio(1, 100);
+        const assets = [...firstPage.assets];
+        for (let page = 2; page <= firstPage.pagination.totalPages; page += 1) {
+          const nextPage = await ApiClient.getPortfolio(page, 100);
+          assets.push(...nextPage.assets);
+        }
+
+        const headers = ['Ticker','Nome','Quantidade','Preço atual','Valor de mercado','Nota','Carteira ideal (%)','Carteira atual (%)','Alvo (R$)','Diferença (R$)','Quantidade para alvo','Plano','Anotações'];
+        const rows = assets.map(a => [a.ticker,a.name,a.quantity,a.currentPrice,a.marketValue,a.rating ?? '',a.targetPercent,a.currentPercent,a.targetValue,a.difference,a.quantityToTarget,a.recommendation,a.notes]);
+        const csv = [headers, ...rows].map(row => row.map(value => `"${String(value ?? '').replace(/"/g, '""')}"`).join(';')).join('\r\n');
+        const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'carteira-investimentos.csv'; a.click(); URL.revokeObjectURL(url);
+      } catch (error) {
+        toast(error.message, 'error');
+      } finally {
+        button.disabled = false;
+      }
     });
-    window.openAddDialog = openAddDialog; window.editAsset = editAsset; window.deleteAsset = deleteAsset; window.viewNotes = viewNotes;
+    window.openAddDialog = openAddDialog; window.editAsset = editAsset; window.deleteAsset = deleteAsset; window.viewNotes = viewNotes; window.refreshAssetQuote = refreshAssetQuote;
 
     (async function init() {
-      try { await loadData(); $('dbStatus').textContent = 'Banco SQLite conectado'; if (settings.hasApiToken) refreshQuotes(true); }
+      try { await loadData(); $('dbStatus').textContent = 'Banco SQLite conectado'; refreshQuotes(true); }
       catch (error) { $('assetRows').innerHTML = `<tr><td colspan="12"><div class="empty"><strong>Não foi possível carregar a aplicação</strong>${escapeHtml(error.message)}</div></td></tr>`; toast(error.message, 'error'); }
     })();
   </script>
