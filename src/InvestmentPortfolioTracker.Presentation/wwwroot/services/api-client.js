@@ -43,7 +43,15 @@ window.ApiClient = Object.freeze({
   deleteAsset: (id) => request(ApiEndpoints.asset(id), {
     method: 'DELETE'
   }),
-  refreshQuotes: () => request(ApiEndpoints.refreshQuotes, {
+  refreshQuotes: (pageNumber = 1, pageSize = 10, searchTerm = '') => {
+    const query = new URLSearchParams({ pageNumber: String(pageNumber), pageSize: String(pageSize) });
+    if (searchTerm) query.set('search', searchTerm);
+    return request(`${ApiEndpoints.refreshQuotes}?${query}`, {
+      method: 'POST',
+      body: '{}'
+    });
+  },
+  refreshAssetQuote: (id) => request(ApiEndpoints.refreshAssetQuote(id), {
     method: 'POST',
     body: '{}'
   })

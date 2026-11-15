@@ -4,5 +4,6 @@ window.ApiEndpoints = Object.freeze({
   settings: '/api/settings',
   assets: '/api/assets',
   asset: (id) => `/api/assets/${encodeURIComponent(id)}`,
-  refreshQuotes: '/api/quotes/refresh'
+  refreshQuotes: '/api/quotes/refresh',
+  refreshAssetQuote: (id) => `/api/quotes/${encodeURIComponent(id)}/refresh`
 });
