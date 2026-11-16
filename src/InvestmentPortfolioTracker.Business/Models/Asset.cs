@@ -4,7 +4,7 @@ namespace InvestmentPortfolioTracker.Business.Models
 {
     public class Asset : Entity
     {
-        public Asset(int id, string ticker, string name, int quantity, decimal targetPercent, int? rating, string notes, decimal currentPrice, DateTimeOffset? priceUpdatedAt, DateTimeOffset createdAt)
+        public Asset(int id, string ticker, string name, int quantity, decimal targetPercent, int? rating, string notes, decimal currentPrice, DateTimeOffset? priceUpdatedAt, DateTimeOffset? lastQuoteAttemptAt, DateTimeOffset createdAt)
         {
             Id = id;
             Ticker = ticker;
@@ -15,6 +15,7 @@ namespace InvestmentPortfolioTracker.Business.Models
             Notes = notes;
             CurrentPrice = currentPrice;
             PriceUpdatedAt = priceUpdatedAt;
+            LastQuoteAttemptAt = lastQuoteAttemptAt;
             CreatedAt = createdAt;
         }
         public string Ticker { get; set; }
@@ -25,6 +26,7 @@ namespace InvestmentPortfolioTracker.Business.Models
         public string Notes { get; set; }
         public decimal CurrentPrice { get; set; }
         public DateTimeOffset? PriceUpdatedAt { get; set; }
+        public DateTimeOffset? LastQuoteAttemptAt { get; set; }
         public DateTimeOffset CreatedAt { get; set; }
 
         public decimal MarketValue()
