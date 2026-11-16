@@ -6,18 +6,21 @@ using InvestmentPortfolioTracker.Repository.DataContext;
 using InvestmentPortfolioTracker.Repository.Repositories;
 using Microsoft.Data.Sqlite;
 using System.Globalization;
-using System.Net.Http.Headers;
-using System.Text.Json;
 using System.Text.RegularExpressions;
 using InvestmentPortfolioTracker.Business.Notifications;
 using Microsoft.AspNetCore.Mvc;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Services.AddHttpClient("brapi", client =>
+builder.Services.AddHttpClient<IQuoteRefreshService, QuoteRefreshService>(client =>
 {
     client.BaseAddress = new Uri("https://brapi.dev/");
     client.Timeout = TimeSpan.FromSeconds(15);
     client.DefaultRequestHeaders.UserAgent.ParseAdd("InvestmentPortfolioTracker/1.0");
+});
+
+builder.Services.AddSingleton(new QuoteRefreshOptions
+{
+    FreshnessMinutes = builder.Configuration.GetValue<int?>("Quotes:FreshnessMinutes") ?? 2
 });
 
 builder.Services.Configure<Settings>(builder.Configuration.GetSection("Database"));
@@ -93,8 +96,8 @@ app.MapPost("/api/assets", async (AssetInput input) =>
     {
         await using var connection = await Database.OpenAsync(connectionString);
         await using var command = connection.CreateCommand();
-        command.CommandText = @"INSERT INTO Assets (Ticker, Name, Quantity, TargetPercent, Rating, Notes, CurrentPrice, PriceUpdatedAt, CreatedAt)
-                                VALUES ($ticker, $name, $quantity, $targetPercent, $rating, $notes, 0, NULL, $createdAt);";
+        command.CommandText = @"INSERT INTO Assets (Ticker, Name, Quantity, TargetPercent, Rating, Notes, CurrentPrice, PriceUpdatedAt, LastQuoteAttemptAt, CreatedAt)
+                                VALUES ($ticker, $name, $quantity, $targetPercent, $rating, $notes, 0, NULL, NULL, $createdAt);";
         command.Parameters.AddWithValue("$ticker", ticker);
         command.Parameters.AddWithValue("$name", input.Name?.Trim() ?? string.Empty);
         command.Parameters.AddWithValue("$quantity", input.Quantity);
@@ -131,7 +134,7 @@ app.MapPut("/api/assets/{id:int}", async (int id, AssetInput input) =>
         command.CommandText = @"UPDATE Assets
                                 SET Ticker = $ticker, Name = $name, Quantity = $quantity, TargetPercent = $targetPercent,
                                     Rating = $rating, Notes = $notes,
-                                    CurrentPrice = $currentPrice, PriceUpdatedAt = $priceUpdatedAt
+                                    CurrentPrice = $currentPrice, PriceUpdatedAt = $priceUpdatedAt, LastQuoteAttemptAt = $lastQuoteAttemptAt
                                 WHERE Id = $id;";
         command.Parameters.AddWithValue("$ticker", ticker);
         command.Parameters.AddWithValue("$name", input.Name?.Trim() ?? string.Empty);
@@ -141,6 +144,7 @@ app.MapPut("/api/assets/{id:int}", async (int id, AssetInput input) =>
         command.Parameters.AddWithValue("$notes", input.Notes?.Trim() ?? string.Empty);
         command.Parameters.AddWithValue("$currentPrice", tickerChanged ? 0 : existing.CurrentPrice);
         command.Parameters.AddWithValue("$priceUpdatedAt", tickerChanged ? DBNull.Value : (object?)existing.PriceUpdatedAt?.ToString("O", CultureInfo.InvariantCulture) ?? DBNull.Value);
+        command.Parameters.AddWithValue("$lastQuoteAttemptAt", tickerChanged ? DBNull.Value : (object?)existing.LastQuoteAttemptAt?.ToString("O", CultureInfo.InvariantCulture) ?? DBNull.Value);
         command.Parameters.AddWithValue("$id", id);
         await command.ExecuteNonQueryAsync();
         return Results.Ok(await Database.GetAssetByIdAsync(connectionString, id));
@@ -157,75 +161,33 @@ app.MapDelete("/api/assets/{id:int}", async (int id) =>
     return deleted ? Results.NoContent() : Results.NotFound(new { error = "Ativo não encontrado." });
 });
 
-app.MapPost("/api/quotes/refresh", async (IHttpClientFactory httpClientFactory, ISettingsRepository settingsRepository, IAssetRepository assetRepository) =>
+app.MapPost("/api/quotes/refresh", async (
+    IQuoteRefreshService quoteRefreshService,
+    CancellationToken cancellationToken,
+    [FromQuery] int pageNumber = PaginationLimits.DefaultPageNumber,
+    [FromQuery] int pageSize = PaginationLimits.DefaultPageSize,
+    [FromQuery] string? search = null) =>
 {
-    var assets = await assetRepository.GetAssetsAsync();
-    if (assets.Count == 0)
-        return Results.Ok(new { updated = 0, failed = Array.Empty<object>(), refreshedAt = DateTimeOffset.UtcNow });
+    if (pageNumber < 1)
+        return Results.BadRequest(new { error = "O número da página deve ser maior que zero." });
+    if (pageSize is < 1 or > PaginationLimits.MaximumPageSize)
+        return Results.BadRequest(new { error = $"O tamanho da página deve estar entre 1 e {PaginationLimits.MaximumPageSize}." });
+    if (search?.Length > 100)
+        return Results.BadRequest(new { error = "A busca deve ter até 100 caracteres." });
 
-    var settings = await settingsRepository.GetSettingsAsync();
-    var client = httpClientFactory.CreateClient("brapi");
-    var updated = 0;
-    var failures = new List<object>();
-    var semaphore = new SemaphoreSlim(4, 4);
+    var result = await quoteRefreshService.RefreshVisibleQuotesAsync(pageNumber, pageSize, search, cancellationToken);
+    return Results.Ok(result);
+});
 
-    var tasks = assets.Select(async asset =>
-    {
-        await semaphore.WaitAsync();
-        try
-        {
-            using var request = new HttpRequestMessage(HttpMethod.Get, $"api/quote/{Uri.EscapeDataString(asset.Ticker)}");
-            if (!string.IsNullOrWhiteSpace(settings.ApiToken))
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", settings.ApiToken);
-
-            using var response = await client.SendAsync(request);
-            var body = await response.Content.ReadAsStringAsync();
-            if (!response.IsSuccessStatusCode)
-            {
-                lock (failures)
-                    failures.Add(new { ticker = asset.Ticker, error = response.StatusCode == System.Net.HttpStatusCode.Unauthorized || response.StatusCode == System.Net.HttpStatusCode.Forbidden
-                        ? "A API recusou a consulta. Confira seu token/plano da brapi."
-                        : $"A API respondeu {(int)response.StatusCode}. Confira o token, o ticker e os limites do plano." });
-                return;
-            }
-
-            using var json = JsonDocument.Parse(body);
-            if (!json.RootElement.TryGetProperty("results", out var results) || results.ValueKind != JsonValueKind.Array || results.GetArrayLength() == 0)
-            {
-                lock (failures) failures.Add(new { ticker = asset.Ticker, error = "A API não retornou cotação para este ticker." });
-                return;
-            }
-
-            var first = results[0];
-            if (!first.TryGetProperty("regularMarketPrice", out var priceElement) || !priceElement.TryGetDecimal(out var price) || price < 0)
-            {
-                lock (failures) failures.Add(new { ticker = asset.Ticker, error = "A cotação retornada não contém um preço válido." });
-                return;
-            }
-
-            await Database.UpdateQuoteAsync(connectionString, asset.Id, price, DateTimeOffset.UtcNow);
-            Interlocked.Increment(ref updated);
-        }
-        catch (TaskCanceledException)
-        {
-            lock (failures) failures.Add(new { ticker = asset.Ticker, error = "Tempo limite ao consultar a cotação." });
-        }
-        catch (JsonException)
-        {
-            lock (failures) failures.Add(new { ticker = asset.Ticker, error = "A resposta da API veio em formato inesperado." });
-        }
-        catch (HttpRequestException)
-        {
-            lock (failures) failures.Add(new { ticker = asset.Ticker, error = "Não foi possível conectar à API de cotações." });
-        }
-        finally
-        {
-            semaphore.Release();
-        }
-    });
-
-    await Task.WhenAll(tasks);
-    return Results.Ok(new { updated, failed = failures, refreshedAt = DateTimeOffset.UtcNow });
+app.MapPost("/api/quotes/{id:int}/refresh", async (
+    int id,
+    IQuoteRefreshService quoteRefreshService,
+    CancellationToken cancellationToken) =>
+{
+    var result = await quoteRefreshService.RefreshQuoteAsync(id, cancellationToken);
+    return result is null
+        ? Results.NotFound(new { error = "Ativo não encontrado." })
+        : Results.Ok(result);
 });
 
 app.Run();
@@ -270,6 +232,7 @@ CREATE TABLE IF NOT EXISTS Assets (
     Notes TEXT NOT NULL DEFAULT '',
     CurrentPrice REAL NOT NULL DEFAULT 0 CHECK (CurrentPrice >= 0),
     PriceUpdatedAt TEXT NULL,
+    LastQuoteAttemptAt TEXT NULL,
     CreatedAt TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS Settings (
@@ -279,6 +242,8 @@ CREATE TABLE IF NOT EXISTS Settings (
 );
 INSERT OR IGNORE INTO Settings (Id, Patrimony, ApiToken) VALUES (1, 0, NULL);";
         await command.ExecuteNonQueryAsync();
+
+        await EnsureLastQuoteAttemptColumnAsync(connection);
     }
 
     public static async Task SaveSettingsAsync(string connectionString, decimal patrimony, string? apiToken)
@@ -295,7 +260,7 @@ INSERT OR IGNORE INTO Settings (Id, Patrimony, ApiToken) VALUES (1, 0, NULL);";
     {
         await using var connection = await OpenAsync(connectionString);
         await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT Id, Ticker, Name, Quantity, TargetPercent, Rating, Notes, CurrentPrice, PriceUpdatedAt, CreatedAt FROM Assets WHERE Id = $id;";
+        command.CommandText = "SELECT Id, Ticker, Name, Quantity, TargetPercent, Rating, Notes, CurrentPrice, PriceUpdatedAt, LastQuoteAttemptAt, CreatedAt FROM Assets WHERE Id = $id;";
         command.Parameters.AddWithValue("$id", id);
         await using var reader = await command.ExecuteReaderAsync();
         return await reader.ReadAsync() ? ReadAsset(reader) : null;
@@ -305,7 +270,7 @@ INSERT OR IGNORE INTO Settings (Id, Patrimony, ApiToken) VALUES (1, 0, NULL);";
     {
         await using var connection = await OpenAsync(connectionString);
         await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT Id, Ticker, Name, Quantity, TargetPercent, Rating, Notes, CurrentPrice, PriceUpdatedAt, CreatedAt FROM Assets WHERE Ticker = $ticker COLLATE NOCASE;";
+        command.CommandText = "SELECT Id, Ticker, Name, Quantity, TargetPercent, Rating, Notes, CurrentPrice, PriceUpdatedAt, LastQuoteAttemptAt, CreatedAt FROM Assets WHERE Ticker = $ticker COLLATE NOCASE;";
         command.Parameters.AddWithValue("$ticker", ticker);
         await using var reader = await command.ExecuteReaderAsync();
         return await reader.ReadAsync() ? ReadAsset(reader) : null;
@@ -320,21 +285,11 @@ INSERT OR IGNORE INTO Settings (Id, Patrimony, ApiToken) VALUES (1, 0, NULL);";
         return await command.ExecuteNonQueryAsync() > 0;
     }
 
-    public static async Task UpdateQuoteAsync(string connectionString, int id, decimal price, DateTimeOffset updatedAt)
-    {
-        await using var connection = await OpenAsync(connectionString);
-        await using var command = connection.CreateCommand();
-        command.CommandText = "UPDATE Assets SET CurrentPrice = $price, PriceUpdatedAt = $updatedAt WHERE Id = $id;";
-        command.Parameters.AddWithValue("$price", price);
-        command.Parameters.AddWithValue("$updatedAt", updatedAt.ToString("O", CultureInfo.InvariantCulture));
-        command.Parameters.AddWithValue("$id", id);
-        await command.ExecuteNonQueryAsync();
-    }
-
     private static Asset ReadAsset(SqliteDataReader reader)
     {
         var updatedAt = reader.IsDBNull(8) ? (DateTimeOffset?)null : DateTimeOffset.Parse(reader.GetString(8), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
-        var createdAt = DateTimeOffset.Parse(reader.GetString(9), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
+        var lastQuoteAttemptAt = reader.IsDBNull(9) ? (DateTimeOffset?)null : DateTimeOffset.Parse(reader.GetString(9), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
+        var createdAt = DateTimeOffset.Parse(reader.GetString(10), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
         return new Asset(
             reader.GetInt32(0),
             reader.GetString(1),
@@ -345,6 +300,31 @@ INSERT OR IGNORE INTO Settings (Id, Patrimony, ApiToken) VALUES (1, 0, NULL);";
             reader.GetString(6),
             Convert.ToDecimal(reader.GetDouble(7), CultureInfo.InvariantCulture),
             updatedAt,
+            lastQuoteAttemptAt,
             createdAt);
+    }
+
+    private static async Task EnsureLastQuoteAttemptColumnAsync(SqliteConnection connection)
+    {
+        var columnExists = false;
+        await using (var infoCommand = connection.CreateCommand())
+        {
+            infoCommand.CommandText = "PRAGMA table_info(Assets);";
+            await using var reader = await infoCommand.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                if (string.Equals(reader.GetString(1), "LastQuoteAttemptAt", StringComparison.OrdinalIgnoreCase))
+                {
+                    columnExists = true;
+                    break;
+                }
+            }
+        }
+
+        if (columnExists) return;
+
+        await using var alterCommand = connection.CreateCommand();
+        alterCommand.CommandText = "ALTER TABLE Assets ADD COLUMN LastQuoteAttemptAt TEXT NULL;";
+        await alterCommand.ExecuteNonQueryAsync();
     }
 }
